@@ -3303,12 +3303,52 @@ function openBuyerAlertModal(wdrId) {
   openModal('modal-buyer-alert');
 }
 
+// Re-alert support: keep a copy of the buyer's alert card so it can be put back
+// in the Buyer Portal when Stock Control alerts the buyer again.
+let previousBuyerResponses = {};
+let bac1CardTemplate = null;
+function captureBuyerAlertCard() {
+  const card = document.getElementById('bac-1-card');
+  if (card && !bac1CardTemplate) {
+    bac1CardTemplate = { html: card.outerHTML, parent: card.parentElement };
+  }
+}
+document.addEventListener('DOMContentLoaded', captureBuyerAlertCard);
+captureBuyerAlertCard();
+
+function restoreBuyerAlertCard() {
+  if (document.getElementById('bac-1-card') || !bac1CardTemplate || !bac1CardTemplate.parent) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = bac1CardTemplate.html;
+  const card = holder.firstElementChild;
+  bac1CardTemplate.parent.insertBefore(card, bac1CardTemplate.parent.firstElementChild);
+  const badge = document.getElementById('buyer-alert-badge');
+  if (badge) {
+    badge.textContent = (parseInt(badge.textContent) || 0) + 1;
+    badge.style.display = '';
+  }
+}
+
 function sendBuyerAlert() {
   const wdrId = '4422';
+  const wasResponded = !!buyerResponsesByWdr[wdrId];
+  const wasAlerted = buyerAlertedWdrs.has(wdrId);
+  if (wasResponded) {
+    // Keep the earlier response for reference, then reopen the alert for the buyer.
+    previousBuyerResponses[wdrId] = buyerResponsesByWdr[wdrId];
+    delete buyerResponsesByWdr[wdrId];
+    delete recheckBuyerResponses[wdrId];
+    saveBuyerResponsesToStorage();
+  }
   buyerAlertedWdrs.add(wdrId);
+  if (wasResponded || wasAlerted) restoreBuyerAlertCard();
   closeModal('modal-buyer-alert');
-  showToast('Buyer Alert Sent', 'Email notification sent to James K. (james.k@bsdistribution.co.uk) for PO J1703.', 'info');
-  
+  if (wasResponded || wasAlerted) {
+    showToast('Buyer Alerted Again', 'A new alert email was sent to James K. (james.k@bsdistribution.co.uk) for PO J1703. The alert is open again in the Buyer Portal.', 'info');
+  } else {
+    showToast('Buyer Alert Sent', 'Email notification sent to James K. (james.k@bsdistribution.co.uk) for PO J1703.', 'info');
+  }
+
   // Render updated states immediately
   renderScBuyerState(wdrId);
 }
@@ -3388,8 +3428,9 @@ function renderScBuyerState(wdrId) {
         </div>
       </div>
     `;
-    alertBtn.disabled = true;
-    alertBtn.innerHTML = '✓ Buyer Responded';
+    alertBtn.disabled = false;
+    alertBtn.innerHTML = '✉ Alert Buyer Again';
+    alertBtn.title = 'Send a new alert to the buyer and reopen the alert in the Buyer Portal';
     alertBtn.className = 'btn btn-outline btn-sm';
     
     recheckBtn.disabled = false;
@@ -3410,11 +3451,13 @@ function renderScBuyerState(wdrId) {
         <span class="alert-icon">✉</span>
         <div>
           <strong>Buyer Alert Sent:</strong> Email sent to James K. (james.k@bsdistribution.co.uk). Waiting for the buyer response. WSC remains locked until Stock Control receives the outcome.
+          ${previousBuyerResponses[wdrId] ? `<div class="text-sm text-muted mt-1"><strong>Previous buyer response:</strong> ${escapeHtml(previousBuyerResponses[wdrId].decision)}${previousBuyerResponses[wdrId].note ? ' — ' + escapeHtml(previousBuyerResponses[wdrId].note) : ''} (received ${escapeHtml(previousBuyerResponses[wdrId].receivedAt)})</div>` : ''}
         </div>
       </div>
     `;
-    alertBtn.disabled = true;
-    alertBtn.innerHTML = '✉ Alerted';
+    alertBtn.disabled = false;
+    alertBtn.innerHTML = '✉ Resend Alert';
+    alertBtn.title = 'Send the alert to the buyer again';
     alertBtn.className = 'btn btn-outline btn-sm';
     
     recheckBtn.disabled = true;
